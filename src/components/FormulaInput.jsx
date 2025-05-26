@@ -18,11 +18,12 @@ const FormulaInput = () => {
   const [inputValue, setInputValue] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
 
-  const dummyValues = {
-    revenue: 1000,
-    cost: 400,
-    tax: 0.2,
-  };
+  const predefinedValues = {
+  revenue: 1000,
+  cost: 400,
+  tax: 150,
+};
+
 
   const getLastTokenForSuggestion = (val) => {
     const match = val.match(/(?:[+\-*/^()\s]*)([\w]*)$/);
@@ -30,15 +31,25 @@ const FormulaInput = () => {
   };
 
   const keyword = getLastTokenForSuggestion(inputValue);
-  const { data: suggestions = [], loading, error } = useSuggestions(keyword);
-
-  console.log("Suggestions", suggestions)
+  const { data: suggestions = [] } = useSuggestions(keyword);
 
   const handleKeyDown = (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
       if (inputValue.trim()) {
-        insertToken({ type: "text", value: inputValue.trim() }, selectedIndex ?? formulaTokens.length);
+        const parts = inputValue.trim().match(/([+\-*/()]|\w+)/g) || [];
+        parts.forEach((part) => {
+          const isOperator = /^[+\-*/()]$/.test(part);
+          const isNumber = /^\d+$/.test(part);
+          insertToken(
+            isOperator
+              ? { type: "operator", value: part }
+              : isNumber
+              ? { type: "text", value: part } // allow natural numbers
+              : { type: "text", value: part },
+            selectedIndex ?? formulaTokens.length
+          );
+        });
         setInputValue("");
         setShowSuggestions(false);
       }
@@ -51,11 +62,10 @@ const FormulaInput = () => {
   };
 
   const handleSuggestionClick = (suggestion) => {
-    // suggestion is string like "name (category)"
-    // We want to insert only the name part before space and '('
-    const name = suggestion.split(" (")[0];
-    const prefix = inputValue.replace(/([\w]*)$/, "");
-    insertToken({ type: "text", value: prefix + name }, selectedIndex ?? formulaTokens.length);
+    insertToken(
+      { type: "suggestion", value: suggestion },
+      selectedIndex ?? formulaTokens.length
+    );
     setInputValue("");
     setShowSuggestions(false);
     inputRef.current.focus();
@@ -80,26 +90,38 @@ const FormulaInput = () => {
   );
 
   const evaluateFormula = () => {
-    const expr = formulaTokens
-      .map((t) => {
-        if (t.type === "text") {
-          if (!isNaN(Number(t.value))) return t.value;
-          return dummyValues[t.value] ?? 0;
+  const expr = formulaTokens
+    .map((t) => {
+      if (t.type === "suggestion") {
+        return t.value ?? 0;
+      } else if (t.type === "text") {
+        if (predefinedValues.hasOwnProperty(t.value.toLowerCase())) {
+          return predefinedValues[t.value.toLowerCase()];
+        } else if (!isNaN(Number(t.value))) {
+          return t.value;
         }
-        return "";
-      })
-      .join(" ");
-    try {
-      const result = Function(`"use strict"; return (${expr})`)();
-      return result;
-    } catch {
-      return "Invalid Expression";
-    }
-  };
+        return 0;
+      } else if (t.type === "operator") {
+        return t.value;
+      }
+      return "";
+    })
+    .join(" ");
+
+  try {
+    const result = Function(`"use strict"; return (${expr})`)();
+    return result;
+  } catch {
+    return "Invalid Expression";
+  }
+};
 
   return (
     <div className="relative">
-      <div className="flex flex-wrap gap-2 p-2 border rounded bg-white" onClick={() => setSelectedIndex(formulaTokens.length)}>
+      <div
+        className="flex flex-wrap gap-2 p-2 border rounded bg-white"
+        onClick={() => setSelectedIndex(formulaTokens.length)}
+      >
         {formulaTokens.map((token, idx) => (
           <React.Fragment key={idx}>
             {renderInput(idx)}
@@ -109,14 +131,9 @@ const FormulaInput = () => {
         {renderInput(formulaTokens.length)}
       </div>
 
-      {showSuggestions && (
-        <div className="absolute left-0 mt-1 w-60 bg-white border rounded shadow z-10 max-h-60 overflow-auto">
-          {loading && <div className="px-3 py-2 text-gray-500">Loading...</div>}
-          {error && <div className="px-3 py-2 text-red-500">Error loading suggestions</div>}
-          {!loading && !error && suggestions.length === 0 && (
-            <div className="px-3 py-2 text-gray-500">No suggestions</div>
-          )}
-          {!loading && !error && suggestions.map((s, i) => (
+      {showSuggestions && suggestions.length > 0 && (
+        <div className="absolute left-0 mt-1 w-60 bg-white border rounded shadow z-10">
+          {suggestions.map((s, i) => (
             <div
               key={i}
               className="px-3 py-2 hover:bg-gray-100 cursor-pointer"

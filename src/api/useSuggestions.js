@@ -23,7 +23,7 @@ export const useSuggestions = (keyword) => {
         );
 
         // Map to just names or whatever you want to show
-        setData(filtered.map((item) => `${item.id}`));
+        setData(filtered.map((item) => item.value));
         setLoading(false);
       })
       .catch((err) => {
